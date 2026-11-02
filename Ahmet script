@@ -1,0 +1,313 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+
+local enemyEnabled = true
+local enemyTouchingMove = false
+local enemyIsLocked = false
+
+local function getNearestEnemy()
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+    
+    local nearest, minDist = nil, 200
+    
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
+            if plr.Team == nil or plr.Team ~= LocalPlayer.Team then
+                local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local dist = (hrp.Position - myRoot.Position).Magnitude
+                    if dist < minDist then
+                        minDist = dist
+                        nearest = hrp
+                    end
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+RunService.Heartbeat:Connect(function()
+    if not enemyEnabled or enemyTouchingMove then return end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChild("Humanoid")
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local target = getNearestEnemy()
+    
+    if hum and hrp and target then
+        hum:MoveTo(target.Position)
+        if target.Position.Y > hrp.Position.Y + 3 then hum.Jump = true end
+    end
+end)
+
+local screenGui1 = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+screenGui1.Name = "EnemyChaserGui"
+
+local guiCircle = Instance.new("ImageButton", screenGui1)
+guiCircle.Size = UDim2.new(0, 80, 0, 80)
+guiCircle.Position = UDim2.new(0.8, 0, 0.1, 0)
+guiCircle.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+Instance.new("UICorner", guiCircle).CornerRadius = UDim.new(1, 0)
+
+local lockBtn = Instance.new("TextButton", guiCircle)
+lockBtn.Size = UDim2.new(0, 40, 0, 40)
+lockBtn.Position = UDim2.new(0.5, -20, -0.5, 0)
+lockBtn.Text = "Lock"
+lockBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+Instance.new("UICorner", lockBtn).CornerRadius = UDim.new(1, 0)
+
+local toggleBtn = Instance.new("TextButton", guiCircle)
+toggleBtn.Size = UDim2.new(0, 60, 0, 60)
+toggleBtn.Position = UDim2.new(0.15, 0, 0.15, 0)
+toggleBtn.Text = "ON"
+toggleBtn.BackgroundTransparency = 1
+toggleBtn.TextColor3 = Color3.new(1, 1, 1)
+toggleBtn.Parent = guiCircle
+
+lockBtn.MouseButton1Click:Connect(function()
+    enemyIsLocked = not enemyIsLocked
+    lockBtn.BackgroundColor3 = enemyIsLocked and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+    lockBtn.Text = enemyIsLocked and "Locked" or "Lock"
+end)
+
+toggleBtn.MouseButton1Click:Connect(function()
+    enemyEnabled = not enemyEnabled
+    guiCircle.BackgroundColor3 = enemyEnabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
+    toggleBtn.Text = enemyEnabled and "ON" or "OFF"
+end)
+
+guiCircle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch and not enemyIsLocked then
+        local dragStart = input.Position
+        local startPos = guiCircle.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then return end
+            local delta = input.Position - dragStart
+            guiCircle.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end)
+    end
+end)
+
+UserInputService.TouchStarted:Connect(function(input)
+    if input.Position.X < UserInputService:GetScreenSize().X / 2 then enemyTouchingMove = true end
+end)
+UserInputService.TouchEnded:Connect(function()
+    enemyTouchingMove = false
+end)
+
+local MAX_DISTANCE = 8
+local EMO_ANIMATION_ID = "rbxassetid://YOUR_ANIMATION_ID_HERE"
+
+local scriptEnabled = false
+local isLocked = false
+local isDragging = false
+local dragStart = nil
+local startPos = nil
+
+local mainAnimation = nil
+local animTrack = nil
+local staticTrusses = {}
+
+local function setupStaticTrusses()
+    staticTrusses = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("TrussPart") or (obj:IsA("BasePart") and string.find(string.lower(obj.Name), "truss")) then
+            table.insert(staticTrusses, obj)
+        end
+    end
+end
+setupStaticTrusses()
+
+local function setupAnimation(humanoid)
+    if animTrack then 
+        animTrack:Stop()
+        animTrack:Destroy()
+        animTrack = nil
+    end
+    if mainAnimation then 
+        mainAnimation:Destroy() 
+    end
+    
+    mainAnimation = Instance.new("Animation")
+    mainAnimation.AnimationId = EMO_ANIMATION_ID
+    
+    local success, _ = pcall(function()
+        animTrack = humanoid:LoadAnimation(mainAnimation)
+    end)
+    if not success then
+        animTrack = nil
+    end
+end
+
+local screenGui2 = Instance.new("ScreenGui")
+screenGui2.Name = "SmartBodySnapFixed"
+screenGui2.ResetOnSpawn = false
+screenGui2.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+pcall(function()
+    screenGui2.Parent = CoreGui
+end)
+if not screenGui2.Parent then
+    screenGui2.Parent = LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 120, 0, 70)
+mainFrame.Position = UDim2.new(0.1, 0, 0.4, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.BackgroundTransparency = 0.3
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Parent = screenGui2
+
+local frameCorner = Instance.new("UICorner")
+frameCorner.CornerRadius = UDim.new(0, 10)
+frameCorner.Parent = mainFrame
+
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 60, 0, 50)
+toggleButton.Position = UDim2.new(0, 10, 0, 10)
+toggleButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+toggleButton.Text = "OFF"
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.TextSize = 18
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.Parent = mainFrame
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(0, 8)
+toggleCorner.Parent = toggleButton
+
+local lockButton = Instance.new("TextButton")
+lockButton.Size = UDim2.new(0, 35, 0, 35)
+lockButton.Position = UDim2.new(0, 80, 0, 17)
+lockButton.BackgroundColor3 = Color3.fromRGB(0, 170, 100)
+lockButton.Text = "🔓"
+lockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+lockButton.TextSize = 16
+lockButton.Font = Enum.Font.SourceSansBold
+lockButton.Parent = mainFrame
+
+local lockCorner = Instance.new("UICorner")
+lockCorner.CornerRadius = UDim.new(0, 6)
+lockCorner.Parent = lockButton
+
+mainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if isLocked then return end
+        isDragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+    end
+end)
+
+mainFrame.InputChanged:Connect(function(input)
+    if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+mainFrame.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDragging = false
+    end
+end)
+
+lockButton.MouseButton1Click:Connect(function()
+    isLocked = not isLocked
+    if isLocked then
+        lockButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+        lockButton.Text = "🔒"
+    else
+        lockButton.BackgroundColor3 = Color3.fromRGB(0, 170, 100)
+        lockButton.Text = "🔓"
+    end
+end)
+
+toggleButton.MouseButton1Click:Connect(function()
+    if isDragging then return end
+    scriptEnabled = not scriptEnabled
+    
+    if scriptEnabled then
+        toggleButton.BackgroundColor3 = Color3.fromRGB(0, 170, 100)
+        toggleButton.Text = "ON"
+        setupStaticTrusses()
+        
+        local char = LocalPlayer.Character
+        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+        if humanoid then setupAnimation(humanoid) end
+    else
+        toggleButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+        toggleButton.Text = "OFF"
+        if animTrack then animTrack:Stop() end
+    end
+end)
+
+local function snapToLadder(root, targetPos)
+    local flatDir = Vector3.new(targetPos.X - root.Position.X, 0, targetPos.Z - root.Position.Z)
+    if flatDir.Magnitude > 0.01 then
+        root.CFrame = CFrame.lookAt(root.Position, root.Position + flatDir.Unit)
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if not scriptEnabled then return end
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    
+    if humanoid.MoveDirection.Magnitude == 0 and (not animTrack or not animTrack.IsPlaying) then 
+        return 
+    end
+    
+    local rootPos = root.Position
+    local nearest = nil
+    local minDist = MAX_DISTANCE
+    
+    for _, obj in ipairs(staticTrusses) do
+        if obj and obj.Parent then
+            local dist = (rootPos - obj.Position).Magnitude
+            if dist < minDist then
+                minDist = dist
+                nearest = obj
+            end
+        end
+    end
+    
+    if nearest then
+        snapToLadder(root, nearest.Position)
+        if animTrack and not animTrack.IsPlaying then
+            animTrack:Play()
+        end
+    else
+        if animTrack and animTrack.IsPlaying then
+            animTrack:Stop()
+        end
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1)
+    setupStaticTrusses()
+    local humanoid = char:WaitForChild("Humanoid", 3)
+    if humanoid and scriptEnabled then
+        setupAnimation(humanoid)
+    end
+end)
